@@ -14,15 +14,15 @@ from utils.image_processing import (
     validate_tx_position
 )
 from utils.path_loss_calculator import (
+    generate_rx_data, 
     predict_path_loss, 
-    create_interpolated_grid,
-    calculate_combined_path_loss
+    create_interpolated_grid
 )
 from config import MESSAGES
 
 
 def check_generation_requirements(uploaded_file, model, real_length_m, real_width_m,
-                                wifi_positions, frequency_mhz, step, num_wifi):
+                                tx_x_m, tx_y_m, frequency_mhz, step):
     """
     Vérifie si tous les prérequis pour la génération sont remplis
     
@@ -35,16 +35,10 @@ def check_generation_requirements(uploaded_file, model, real_length_m, real_widt
         issues.append("❌ Aucun fichier image téléchargé")
     if model is None:
         issues.append("❌ Modèle ML non chargé")
-    if len(wifi_positions) < num_wifi:
-        issues.append(f"❌ {num_wifi - len(wifi_positions)} point(s) WiFi manquant(s)")
-    
-    # Vérifier chaque position WiFi
-    for i, (tx_x_m, tx_y_m) in enumerate(wifi_positions):
-        if not (0 <= tx_x_m <= real_length_m):
-            issues.append(f"❌ Position X du WiFi {i+1} hors limites")
-        if not (0 <= tx_y_m <= real_width_m):
-            issues.append(f"❌ Position Y du WiFi {i+1} hors limites")
-    
+    if not (0 <= tx_x_m <= real_length_m):
+        issues.append("❌ Position X du transmetteur hors limites")
+    if not (0 <= tx_y_m <= real_width_m):
+        issues.append("❌ Position Y du transmetteur hors limites")
     if not (100 <= frequency_mhz <= 10000):
         issues.append("❌ Fréquence hors de la plage valide")
     if step <= 0:
@@ -55,9 +49,9 @@ def check_generation_requirements(uploaded_file, model, real_length_m, real_widt
 
 
 def create_heatmap_plot(binary_img, original_img, grid_x, grid_y, grid_path_loss,
-                       path_loss_values, wifi_positions_px, img_width, img_height):
+                       path_loss_values, tx_x_px, tx_y_px, img_width, img_height):
     """
-    Crée le plot matplotlib de la heatmap avec plusieurs points WiFi
+    Crée le plot matplotlib de la heatmap
     
     Returns:
         matplotlib.figure.Figure: Figure de la heatmap
@@ -76,16 +70,10 @@ def create_heatmap_plot(binary_img, original_img, grid_x, grid_y, grid_path_loss
     # Ajouter la barre de couleur
     plt.colorbar(im, label='Path Loss (dB)')
     
-    # Visualisation des points WiFi
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
-    
-    for i, (tx_x_px, tx_y_px) in enumerate(wifi_positions_px):
-        color = colors[i % len(colors)]
-        ax.scatter(tx_x_px, tx_y_px, color=color, s=200, marker='*',
-                  edgecolors='black', linewidth=2, label=f'WiFi {i+1}')
-        ax.text(tx_x_px, tx_y_px - 15, f'WiFi {i+1}', color=color, 
-               fontsize=12, ha='center', weight='bold',
-               bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+    # Visualisation Tx améliorée
+    ax.scatter(tx_x_px, tx_y_px, color='red', s=200, marker='*',
+              edgecolors='black', linewidth=2, label='Tx (WiFi)')
+    ax.text(tx_x_px, tx_y_px - 10, 'Tx', color='red', fontsize=14, ha='center')
     
     # Ajouter des contours si possible
     if path_loss_values.size > 50 and np.std(path_loss_values) > 1:
@@ -100,19 +88,19 @@ def create_heatmap_plot(binary_img, original_img, grid_x, grid_y, grid_path_loss
         except Exception:
             pass  # Continuer sans contours si le tracé échoue
     
-    ax.set_title(f'Path Loss Heatmap - {len(wifi_positions_px)} Point(s) WiFi')
+    ax.set_title('Path Loss Heatmap')
     ax.set_xlabel('Position X (pixels)')
     ax.set_ylabel('Position Y (pixels)')
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.legend()
     plt.tight_layout()
     
     return fig
 
 
 def process_and_generate_heatmap(uploaded_file, real_length_m, real_width_m, 
-                               wifi_positions, frequency_mhz, step, model):
+                               tx_x_m, tx_y_m, frequency_mhz, step, model):
     """
-    Traite l'image et génère la heatmap pour plusieurs points WiFi
+    Traite l'image et génère la heatmap complète
     
     Returns:
         tuple: (figure, error_message)
@@ -125,26 +113,23 @@ def process_and_generate_heatmap(uploaded_file, real_length_m, real_width_m,
         
         img_height, img_width = binary_img.shape
         
-        # Convertir les positions WiFi en pixels
-        wifi_positions_px = []
-        for tx_x_m, tx_y_m in wifi_positions:
-            tx_x_px = convert_position_to_pixels(tx_x_m, real_length_m, img_width)
-            tx_y_px = convert_position_to_pixels(tx_y_m, real_width_m, img_height)
-            
-            # Vérifier les limites
-            if not validate_tx_position(tx_x_px, tx_y_px, img_width, img_height):
-                return None, f"Une position WiFi ({tx_x_m:.2f}m, {tx_y_m:.2f}m) est hors des limites de l'image."
-            
-            wifi_positions_px.append((tx_x_px, tx_y_px))
+        # Convertir la position Tx en pixels
+        tx_x_px = convert_position_to_pixels(tx_x_m, real_length_m, img_width)
+        tx_y_px = convert_position_to_pixels(tx_y_m, real_width_m, img_height)
         
-        # Calculer le path loss combiné pour tous les WiFi
-        rx_df = calculate_combined_path_loss(
-            binary_img, wifi_positions_px, real_length_m, real_width_m, 
-            frequency_mhz, step, model
-        )
+        # Vérifier les limites
+        if not validate_tx_position(tx_x_px, tx_y_px, img_width, img_height):
+            return None, "La position Tx est hors des limites de l'image."
+        
+        # Générer les données Rx
+        rx_df = generate_rx_data(binary_img, tx_x_px, tx_y_px, real_length_m, 
+                               real_width_m, frequency_mhz, step)
         
         if rx_df.empty:
             return None, "Aucun espace libre trouvé."
+        
+        # Prédire le Path Loss
+        rx_df = predict_path_loss(rx_df, model)
         
         # Créer la grille interpolée
         grid_x, grid_y, grid_path_loss = create_interpolated_grid(
@@ -157,7 +142,7 @@ def process_and_generate_heatmap(uploaded_file, real_length_m, real_width_m,
         # Créer la heatmap
         path_loss_values = rx_df['Path_Loss_Predicted'].values
         fig = create_heatmap_plot(binary_img, original_img, grid_x, grid_y, 
-                                grid_path_loss, path_loss_values, wifi_positions_px,
+                                grid_path_loss, path_loss_values, tx_x_px, tx_y_px,
                                 img_width, img_height)
         
         return fig, None
@@ -182,8 +167,8 @@ def render_heatmap_generation_section(params, model):
     # Vérifications avant génération
     can_generate, issues = check_generation_requirements(
         params['uploaded_file'], model, params['real_length_m'], 
-        params['real_width_m'], params['wifi_positions'], 
-        params['frequency_mhz'], params['step'], params['num_wifi']
+        params['real_width_m'], params['tx_x_m'], params['tx_y_m'],
+        params['frequency_mhz'], params['step']
     )
     
     if st.button("🚀 Générer la Heatmap", disabled=not can_generate, type="primary"):
@@ -194,7 +179,7 @@ def render_heatmap_generation_section(params, model):
                 try:
                     fig, error = process_and_generate_heatmap(
                         params['uploaded_file'], params['real_length_m'], 
-                        params['real_width_m'], params['wifi_positions'],
+                        params['real_width_m'], params['tx_x_m'], params['tx_y_m'],
                         params['frequency_mhz'], params['step'], model
                     )
                     

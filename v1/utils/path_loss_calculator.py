@@ -12,21 +12,22 @@ from utils.image_processing import (
 )
 
 
-def generate_rx_data_multiple_wifi(binary_img, wifi_positions_px, real_length_m, real_width_m, 
-                                  frequency_mhz, step):
+def generate_rx_data(binary_img, tx_x_px, tx_y_px, real_length_m, real_width_m, 
+                    frequency_mhz, step):
     """
-    Génère les données des points récepteurs pour plusieurs points WiFi
+    Génère les données des points récepteurs pour le calcul du path loss
     
     Args:
         binary_img: Image binaire du plan
-        wifi_positions_px: Liste des positions WiFi en pixels [(x1, y1), (x2, y2), ...]
+        tx_x_px: Position X du transmetteur en pixels
+        tx_y_px: Position Y du transmetteur en pixels
         real_length_m: Longueur réelle en mètres
         real_width_m: Largeur réelle en mètres
         frequency_mhz: Fréquence en MHz
         step: Pas de la grille en pixels
         
     Returns:
-        pd.DataFrame: Données des récepteurs avec path loss pour chaque WiFi
+        pd.DataFrame: Données des récepteurs avec caractéristiques calculées
     """
     img_height, img_width = binary_img.shape
     rx_data = []
@@ -37,122 +38,29 @@ def generate_rx_data_multiple_wifi(binary_img, wifi_positions_px, real_length_m,
             if (0 <= rx_x < img_width and 0 <= rx_y < img_height and 
                 binary_img[rx_y, rx_x] == 0):
                 
-                # Pour chaque point WiFi, calculer le path loss
-                min_path_loss = float('inf')
-                best_wifi_idx = 0
+                # Calculer la distance en pixels
+                distance_px = np.sqrt((rx_x - tx_x_px)**2 + (rx_y - tx_y_px)**2)
                 
-                for wifi_idx, (tx_x_px, tx_y_px) in enumerate(wifi_positions_px):
-                    # Calculer la distance en pixels
-                    distance_px = np.sqrt((rx_x - tx_x_px)**2 + (rx_y - tx_y_px)**2)
-                    
-                    # Convertir en mètres
-                    distance_m = convert_distance_to_meters(
-                        distance_px, real_length_m, real_width_m, img_width, img_height
-                    )
-                    
-                    # Éviter les distances nulles
-                    if distance_m < 1e-6:
-                        distance_m = 1e-6
-                    
-                    # Calculer le nombre de murs traversés
-                    _, num_walls = compute_LOS_and_walls_corrected(
-                        (tx_x_px, tx_y_px), (rx_x, rx_y), binary_img
-                    )
-                    
-                    # Créer un DataFrame temporaire pour la prédiction
-                    temp_data = pd.DataFrame([{
-                        'num_walls': num_walls,
-                        'distance': distance_m,
-                        'frequency': frequency_mhz
-                    }])
-                    
-                    # Note: On calculera le path loss plus tard avec le modèle
-                    # Pour l'instant, on stocke juste les paramètres du meilleur WiFi
-                    # (celui avec la distance la plus courte comme approximation)
-                    if distance_m < min_path_loss:
-                        min_path_loss = distance_m
-                        best_wifi_idx = wifi_idx
-                        best_distance = distance_m
-                        best_num_walls = num_walls
+                # Convertir en mètres
+                distance_m = convert_distance_to_meters(
+                    distance_px, real_length_m, real_width_m, img_width, img_height
+                )
+                
+                # Éviter les distances nulles
+                if distance_m < 1e-6:
+                    distance_m = 1e-6
+                
+                # Calculer le nombre de murs traversés
+                _, num_walls = compute_LOS_and_walls_corrected(
+                    (tx_x_px, tx_y_px), (rx_x, rx_y), binary_img
+                )
                 
                 rx_data.append({
                     'RX_x': rx_x,
                     'RX_y': rx_y,
-                    'distance': best_distance,
-                    'num_walls': best_num_walls,
-                    'frequency': frequency_mhz,
-                    'best_wifi_idx': best_wifi_idx
-                })
-    
-    return pd.DataFrame(rx_data)
-
-
-def calculate_combined_path_loss(binary_img, wifi_positions_px, real_length_m, real_width_m,
-                               frequency_mhz, step, model):
-    """
-    Calcule le path loss combiné pour plusieurs points WiFi
-    
-    Args:
-        binary_img: Image binaire du plan
-        wifi_positions_px: Liste des positions WiFi en pixels
-        real_length_m: Longueur réelle en mètres
-        real_width_m: Largeur réelle en mètres
-        frequency_mhz: Fréquence en MHz
-        step: Pas de la grille en pixels
-        model: Modèle ML
-        
-    Returns:
-        pd.DataFrame: DataFrame avec les path loss combinés
-    """
-    img_height, img_width = binary_img.shape
-    rx_data = []
-    
-    for rx_y in range(0, img_height, step):
-        for rx_x in range(0, img_width, step):
-            # Vérifier si le point est dans un espace libre
-            if (0 <= rx_x < img_width and 0 <= rx_y < img_height and 
-                binary_img[rx_y, rx_x] == 0):
-                
-                # Calculer le path loss pour chaque WiFi
-                path_losses = []
-                
-                for tx_x_px, tx_y_px in wifi_positions_px:
-                    # Calculer la distance en pixels
-                    distance_px = np.sqrt((rx_x - tx_x_px)**2 + (rx_y - tx_y_px)**2)
-                    
-                    # Convertir en mètres
-                    distance_m = convert_distance_to_meters(
-                        distance_px, real_length_m, real_width_m, img_width, img_height
-                    )
-                    
-                    # Éviter les distances nulles
-                    if distance_m < 1e-6:
-                        distance_m = 1e-6
-                    
-                    # Calculer le nombre de murs traversés
-                    _, num_walls = compute_LOS_and_walls_corrected(
-                        (tx_x_px, tx_y_px), (rx_x, rx_y), binary_img
-                    )
-                    
-                    # Prédire le path loss pour ce WiFi
-                    features = pd.DataFrame([{
-                        'num_walls': num_walls,
-                        'distance': distance_m,
-                        'frequency': frequency_mhz
-                    }])
-                    
-                    path_loss = model.predict(features)[0]
-                    path_losses.append(path_loss)
-                
-                # Prendre le minimum path loss (meilleur signal)
-                min_path_loss = min(path_losses)
-                best_wifi_idx = path_losses.index(min_path_loss)
-                
-                rx_data.append({
-                    'RX_x': rx_x,
-                    'RX_y': rx_y,
-                    'Path_Loss_Predicted': min_path_loss,
-                    'best_wifi_idx': best_wifi_idx
+                    'distance': distance_m,
+                    'num_walls': num_walls,
+                    'frequency': frequency_mhz
                 })
     
     return pd.DataFrame(rx_data)

@@ -20,7 +20,6 @@ DEFAULT_VALUES = {
     "real_width_m": 8.0,
     "frequency_mhz": 2400,
     "step": 5,
-    "num_wifi": 1,
 }
 
 LIMITS = {
@@ -31,8 +30,6 @@ LIMITS = {
     "max_step": 50,
     "max_canvas_height": 400,
     "max_canvas_width": 600,
-    "min_wifi": 1,
-    "max_wifi": 10,
 }
 
 # Types de fichiers acceptés
@@ -45,8 +42,6 @@ MESSAGES = {
     "model_load_error": "ERREUR: Erreur lors du chargement du modèle: {}",
     "file_uploaded": "✅ Fichier téléchargé avec succès!",
     "heatmap_generated": "✅ Heatmap générée avec succès!",
-    "click_to_place": "🛑 Cliquez sur l'image pour placer les points WiFi.",
+    "click_to_place": "🛑 Cliquez sur l'image pour placer le WiFi (Tx).",
     "upload_image": "📁 Téléchargez une image pour voir l'aperçu",
-    "wifi_placed": "📍 WiFi {} placé à: ({:.2f}m, {:.2f}m)",
-    "clear_wifi": "🗑️ Effacer tous les points WiFi",
 }

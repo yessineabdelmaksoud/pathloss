@@ -32,16 +32,16 @@ def main():
     # Rendre la sidebar et récupérer les paramètres
     params = render_sidebar()
     
-    # Rendre le contenu principal et obtenir les positions WiFi
-    wifi_positions = render_main_content(
+    # Rendre le contenu principal et obtenir la position Tx mise à jour
+    tx_x_m, tx_y_m = render_main_content(
         params['uploaded_file'], 
         params['real_length_m'], 
-        params['real_width_m'],
-        params['num_wifi']
+        params['real_width_m']
     )
     
-    # Mettre à jour les paramètres avec les positions WiFi
-    params['wifi_positions'] = wifi_positions
+    # Mettre à jour les paramètres avec les positions du canvas
+    params['tx_x_m'] = tx_x_m
+    params['tx_y_m'] = tx_y_m
     
     # Rendre la section de génération de heatmap
     render_heatmap_generation_section(params, model)

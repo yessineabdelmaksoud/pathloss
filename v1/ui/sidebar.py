@@ -46,16 +46,23 @@ def render_sidebar():
         )
         
         # Position du transmetteur
-        st.subheader("📡 Configuration des transmetteurs WiFi")
+        st.subheader("📡 Position du transmetteur (Tx)")
+        tx_x_m = st.number_input(
+            "Position X (mètres)",
+            min_value=0.0,
+            max_value=real_length_m,
+            value=real_length_m/2,
+            step=0.01,
+            help="Position X du transmetteur en mètres"
+        )
         
-        # Nombre de points WiFi
-        num_wifi = st.number_input(
-            "Nombre de points WiFi",
-            min_value=LIMITS["min_wifi"],
-            max_value=LIMITS["max_wifi"],
-            value=DEFAULT_VALUES["num_wifi"],
-            step=1,
-            help="Nombre de points WiFi à placer sur le plan"
+        tx_y_m = st.number_input(
+            "Position Y (mètres)",
+            min_value=0.0,
+            max_value=real_width_m,
+            value=real_width_m/2,
+            step=0.01,
+            help="Position Y du transmetteur en mètres"
         )
         
         # Paramètres de fréquence et résolution
@@ -82,7 +89,8 @@ def render_sidebar():
         'uploaded_file': uploaded_file,
         'real_length_m': real_length_m,
         'real_width_m': real_width_m,
-        'num_wifi': num_wifi,
+        'tx_x_m': tx_x_m,
+        'tx_y_m': tx_y_m,
         'frequency_mhz': frequency_mhz,
         'step': step
     }
